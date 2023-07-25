@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+  <title>TodoMVC: Rust + HTMX Edition</title>
+  <script
+    src="https://unpkg.com/htmx.org@1.9.2"
+    integrity="sha384-L6OqL9pRWyyFU3+/bjdSri+iIphTN/bvYyM37tICVyOJkWZLpP2vGn6VUEXgzg6h"
+    crossorigin="anonymous"
+  ></script>
+  <script src="/assets/helpers.js"></script>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
+  >
+</head>
+
+<body>
+  <div class="columns is-centered">
+    <section class="hero column is-half-desktop">
+      <div class="hero-body">
+        <h1 class="title">TodoMVC</h1>
+        <h2 class="subtitle">Rust + HTMX Edition</h2>
+
+        <nav class="panel mt-6">
+          <p class="panel-heading">
+            TODOS
+          </p>
+
+          <form
+            id="todo-new"
+            class="panel-block"
+            hx-post="/todo"
+            hx-target="#todo-list"
+            hx-swap="afterbegin"
+            hx-on="htmx:afterRequest: document.getElementById('todo-new').reset()"
+          >
+            <div class="control is-expanded">
+              <input
+                class="input"
+                type="text"
+                name="text"
+                placeholder="What needs to be done?"
+                required
+              >
+            </div>
+          </form>
+
+          <div
+            class="panel-tabs"
+            hx-target="#todo-list"
+            hx-boost="true"
+            hx-swap="outerHTML"
+          >
+            <a
+              id="todo-list-all"
+              class="is-active"
+              href=""
+              hx-get="/todo?filter=All"
+              hx-on="htmx:afterRequest: selectTab('todo-list-all')"
+            >
+              All
+              <span
+                id="todo-counter-all"
+                class="tag is-rounded"
+                hx-swap-oob="true"
+              ></span>
+            </a>
+
+            <a
+              id="todo-list-active"
+              href=""
+              hx-get="/todo?filter=Active"
+              hx-on="htmx:afterRequest: selectTab('todo-list-active')"
+            >
+              Active
+              <span
+                id="todo-counter-active"
+                class="tag is-rounded"
+                hx-swap-oob="true"
+              ></span>
+            </a>
+
+            <a
+              id="todo-list-completed"
+              href=""
+              hx-get="/todo?filter=Completed"
+              hx-on="htmx:afterRequest: selectTab('todo-list-completed')"
+            >
+              Completed
+              <span
+                id="todo-counter-completed"
+                class="tag is-rounded"
+                hx-swap-oob="true"
+              ></span>
+            </a>
+          </div>
+
+          <div
+            id="todo-list"
+            hx-get="/todo?filter=All"
+            hx-trigger="load"
+            hx-swap="outerHTML"
+          ></div>
+
+          <div class="panel-block p-0"></div>
+
+          <div class="panel-block">
+            <button
+              id="todo-delete-completed"
+              class="button is-link is-outlined is-fullwidth"
+              hx-delete="/todo"
+              hx-target="#todo-list"
+              hx-swap="outerHTML"
+              hx-swap-oob="true"
+              disabled
+            >
+              Delete completed
+            </button>
+          </div>
+        </nav>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
