@@ -27,7 +27,8 @@
 				"serayuzgur.crates",
 				"eamodio.gitlens",
 				"DioxusLabs.dioxus",
-				"otovo-oss.htmx-tags"
+				"otovo-oss.htmx-tags",
+				"oderwat.indent-rainbow"
 			],
 			"settings": {
 				"html.format.wrapAttributes": "force-expand-multiline",
