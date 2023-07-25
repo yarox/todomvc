@@ -6,7 +6,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::Html,
+    response::{Html, IntoResponse},
     routing::get,
     Form, Router,
 };
@@ -15,12 +15,15 @@ use dioxus_ssr::render_lazy;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
+    fmt,
     net::SocketAddr,
     sync::{Arc, RwLock},
     time::SystemTime,
 };
 use tower_http::services::{ServeDir, ServeFile};
 use uuid::Uuid;
+
+type Db = Arc<RwLock<AppState>>;
 
 #[derive(Debug, Default)]
 struct AppState {
@@ -31,14 +34,23 @@ struct AppState {
     selected_filter: TodoListFilter,
 }
 
-type AppError = (StatusCode, String);
-
 #[derive(Debug, Clone, PartialEq)]
 struct Todo {
     id: Uuid,
     text: String,
     is_done: bool,
     created_at: SystemTime,
+}
+
+impl Default for Todo {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            text: String::new(),
+            is_done: false,
+            created_at: SystemTime::now(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,12 +64,22 @@ struct TodoUpdate {
     is_done: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Default, Clone)]
 pub enum TodoListFilter {
     #[default]
     All,
     Active,
     Completed,
+}
+
+impl fmt::Display for TodoListFilter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Completed => write!(f, "completed"),
+            Self::Active => write!(f, "active"),
+            Self::All => write!(f, "all"),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,40 +89,39 @@ pub struct TodoListParams {
 
 #[derive(PartialEq, Props)]
 struct TodoItemComponentProps {
-    item: Todo,
+    todo: Todo,
 }
 
 fn TodoItemComponent(cx: Scope<TodoItemComponentProps>) -> Element {
     cx.render(rsx! {
-        div {
-            class: "panel-block is-justify-content-space-between",
+        div { class: "panel-block is-justify-content-space-between",
             input {
-                id: "todo-done-{cx.props.item.id}",
+                id: "todo-done-{cx.props.todo.id}",
                 "type": "checkbox",
-                checked: if cx.props.item.is_done {Some(true)} else {None},
-                "hx-patch": "/todo/{cx.props.item.id}",
+                checked: if cx.props.todo.is_done { Some(true) } else { None },
+                "hx-patch": "/todo/{cx.props.todo.id}",
                 "hx-target": "closest .panel-block",
                 "hx-swap": "outerHTML",
-                "hx-vals": "js:{{is_done: document.getElementById('todo-done-{cx.props.item.id}').checked}}"
-            },
+                "hx-vals": "js:{{is_done: document.getElementById('todo-done-{cx.props.todo.id}').checked}}"
+            }
             p {
                 class: "is-flex-grow-1",
-                "hx-get": "/todo/{cx.props.item.id}",
+                "hx-get": "/todo/{cx.props.todo.id}",
                 "hx-target": "this",
                 "hx-swap": "outerHTML",
 
-                if cx.props.item.is_done {
-                    rsx!(s { cx.props.item.text.clone() })
+                if cx.props.todo.is_done {
+                    rsx!(s { cx.props.todo.text.clone() })
                 } else {
-                    rsx!(cx.props.item.text.clone())
+                    rsx!(cx.props.todo.text.clone())
                 }
-            },
+            }
             button {
                 class: "delete is-medium",
-                "hx-delete": "/todo/{cx.props.item.id}",
+                "hx-delete": "/todo/{cx.props.todo.id}",
                 "hx-target": "closest .panel-block",
-                "hx-swap": "outerHTML",
-            },
+                "hx-swap": "outerHTML"
+            }
         }
     })
 }
@@ -113,53 +134,44 @@ struct TodoEditComponentProps {
 fn TodoEditComponent(cx: Scope<TodoEditComponentProps>) -> Element {
     cx.render(rsx! {
         form {
-          class: "is-flex-grow-1",
-          "hx-patch": "/todo/{cx.props.item.id}",
-          "hx-target": "closest .panel-block",
-          "hx-swap": "outerHTML",
-          p {
-            input {
-                "type": "text",
-                name: "text",
-                value: "{cx.props.item.text}",
-            },
-          },
-      }
+            class: "is-flex-grow-1",
+            "hx-patch": "/todo/{cx.props.item.id}",
+            "hx-target": "closest .panel-block",
+            "hx-swap": "outerHTML",
+            p { input { "type": "text", name: "text", value: "{cx.props.item.text}" } }
+        }
     })
 }
 
 #[derive(PartialEq, Props)]
 struct TodoListComponentProps {
-    items: Vec<Todo>,
+    todos: Vec<Todo>,
 }
 
 fn TodoListComponent(cx: Scope<TodoListComponentProps>) -> Element {
     cx.render(rsx! {
-        span {
-            id: "todo-list",
-            for item in cx.props.items.clone() {
-                TodoItemComponent {
-                    item: item
-                }
+        span { id: "todo-list",
+            for todo in cx.props.todos.clone() {
+                TodoItemComponent { todo: todo }
             }
-      }
+        }
     })
 }
 
 #[derive(PartialEq, Props)]
 struct TodoCounterComponentProps {
-    name: String,
+    filter: TodoListFilter,
     num_items: u32,
 }
 
 fn TodoCounterComponent(cx: Scope<TodoCounterComponentProps>) -> Element {
     cx.render(rsx! {
         span {
-            id: "todo-counter-{cx.props.name}",
+            id: "todo-counter-{cx.props.filter}",
             class: "tag is-rounded",
             "hx-swap-oob": true,
-            "{cx.props.num_items}",
-        },
+            "{cx.props.num_items}"
+        }
     })
 }
 
@@ -177,21 +189,15 @@ fn TodoDeleteCompletedComponent(cx: Scope<TodoDeleteCompletedComponentProps>) ->
             "hx-swap": "outerHTML",
             "hx-delete": "/todo",
             "hx-swap-oob": true,
-            disabled: if cx.props.is_disabled {Some(true)} else {None},
+            disabled: if cx.props.is_disabled { Some(true) } else { None },
             "Delete completed"
-        },
+        }
     })
 }
 
 #[tokio::main]
 async fn main() {
-    let shared_state = Arc::new(RwLock::new(AppState {
-        todos: HashMap::default(),
-        num_all_items: 0,
-        num_active_items: 0,
-        num_completed_items: 0,
-        selected_filter: TodoListFilter::All,
-    }));
+    let shared_state = Arc::new(RwLock::new(AppState::default()));
 
     let app = Router::new()
         .nest_service("/", ServeFile::new("assets/index.html"))
@@ -208,7 +214,7 @@ async fn main() {
         )
         .with_state(shared_state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     println!("listening on {}", addr);
 
     axum::Server::bind(&addr)
@@ -218,12 +224,14 @@ async fn main() {
 }
 
 async fn list_todo(
-    State(state): State<Arc<RwLock<AppState>>>,
+    State(db): State<Db>,
     Query(TodoListParams { filter }): Query<TodoListParams>,
-) -> Result<Html<String>, AppError> {
-    let mut items = state
-        .read()
-        .unwrap()
+) -> impl IntoResponse {
+    db.write().unwrap().selected_filter = filter.clone();
+
+    let state = db.read().unwrap();
+
+    let mut todos = state
         .todos
         .values()
         .filter(|item| match filter {
@@ -234,214 +242,164 @@ async fn list_todo(
         .cloned()
         .collect::<Vec<_>>();
 
-    items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-    state.write().unwrap().selected_filter = filter;
+    todos.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
-    let lock = state.read().unwrap();
+    Html(render_lazy(rsx! {
+        TodoListComponent { todos: todos }
 
-    Ok(Html(render_lazy(rsx! {
-        TodoListComponent {
-            items: items
-        },
-        TodoCounterComponent {
-            name: "all".to_string(),
-            num_items: lock.num_all_items,
-        },
-        TodoCounterComponent {
-            name: "active".to_string(),
-            num_items: lock.num_active_items,
-        },
-        TodoCounterComponent {
-            name: "completed".to_string(),
-            num_items: lock.num_completed_items,
-        },
-        TodoDeleteCompletedComponent {
-            is_disabled: lock.num_completed_items == 0,
-        },
-    })))
+        TodoCounterComponent { filter: TodoListFilter::Completed, num_items: state.num_completed_items }
+        TodoCounterComponent { filter: TodoListFilter::Active, num_items: state.num_active_items }
+        TodoCounterComponent { filter: TodoListFilter::All, num_items: state.num_all_items }
+
+        TodoDeleteCompletedComponent { is_disabled: state.num_completed_items == 0 }
+    }))
 }
 
-async fn create_todo(
-    State(state): State<Arc<RwLock<AppState>>>,
-    Form(todo_new): Form<TodoCreate>,
-) -> Result<Html<String>, AppError> {
-    let item = Todo {
-        id: Uuid::new_v4(),
+async fn create_todo(State(db): State<Db>, Form(todo_new): Form<TodoCreate>) -> impl IntoResponse {
+    let todo = Todo {
         text: todo_new.text,
-        is_done: false,
-        created_at: SystemTime::now(),
+        ..Default::default()
     };
 
-    {
-        let mut lock = state.write().unwrap();
+    let mut state = db.write().unwrap();
 
-        lock.todos.insert(item.id, item.clone());
+    state.todos.insert(todo.id, todo.clone());
+    state.num_active_items += 1;
+    state.num_all_items += 1;
 
-        lock.num_all_items += 1;
-        lock.num_active_items += 1;
-    }
+    drop(state);
 
-    let lock = state.read().unwrap();
-    let todo_item_component = if lock.selected_filter == TodoListFilter::Completed {
-        rsx!("")
-    } else {
-        rsx!(TodoItemComponent { item: item })
-    };
+    let state = db.read().unwrap();
 
-    Ok(Html(render_lazy(rsx! {
-        todo_item_component,
-        TodoCounterComponent {
-            name: "all".to_string(),
-            num_items: lock.num_all_items,
-        },
-        TodoCounterComponent {
-            name: "active".to_string(),
-            num_items: lock.num_active_items,
-        },
-    })))
+    Html(render_lazy(rsx! {
+        if state.selected_filter == TodoListFilter::Completed {
+            rsx!("")
+        } else {
+            rsx!(TodoItemComponent { todo: todo })
+        }
+
+        TodoCounterComponent { filter: TodoListFilter::Active, num_items: state.num_active_items }
+        TodoCounterComponent { filter: TodoListFilter::All, num_items: state.num_all_items }
+    }))
 }
 
-async fn delete_completed_todo(
-    State(state): State<Arc<RwLock<AppState>>>,
-) -> Result<Html<String>, AppError> {
-    state.write().unwrap().todos.retain(|_, v| !v.is_done);
+async fn delete_completed_todo(State(db): State<Db>) -> impl IntoResponse {
+    let mut state = db.write().unwrap();
 
-    let items = if state.read().unwrap().selected_filter == TodoListFilter::Completed {
+    state.todos.retain(|_, v| !v.is_done);
+    state.num_all_items -= state.num_completed_items;
+    state.num_completed_items = 0;
+
+    drop(state);
+
+    let state = db.read().unwrap();
+    let todos = if state.selected_filter == TodoListFilter::Completed {
         Vec::new()
     } else {
-        let mut items = state
-            .read()
-            .unwrap()
-            .todos
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
-
-        items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-        items
+        let mut todos = state.todos.values().cloned().collect::<Vec<_>>();
+        todos.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        todos
     };
 
-    let num_completed_items = state.read().unwrap().num_completed_items;
+    Html(render_lazy(rsx! {
+        TodoListComponent { todos: todos }
 
-    state.write().unwrap().num_all_items -= num_completed_items;
-    state.write().unwrap().num_completed_items = 0;
+        TodoCounterComponent { filter: TodoListFilter::Completed, num_items: state.num_completed_items }
+        TodoCounterComponent { filter: TodoListFilter::All, num_items: state.num_all_items }
 
-    Ok(Html(render_lazy(rsx! {
-        TodoListComponent {
-            items: items
-        },
-        TodoCounterComponent {
-            name: "completed".to_string(),
-            num_items: 0,
-        },TodoCounterComponent {
-            name: "all".to_string(),
-            num_items: state.read().unwrap().num_all_items
-        },
-        TodoDeleteCompletedComponent {
-            is_disabled: true,
-        },
-    })))
+        TodoDeleteCompletedComponent { is_disabled: true }
+    }))
 }
 
 async fn edit_todo(
-    State(state): State<Arc<RwLock<AppState>>>,
+    State(db): State<Db>,
     Path(id): Path<Uuid>,
-) -> Result<Html<String>, AppError> {
-    let lock = state.read().unwrap();
+) -> Result<impl IntoResponse, StatusCode> {
+    let item = db
+        .read()
+        .unwrap()
+        .todos
+        .get(&id)
+        .cloned()
+        .ok_or(StatusCode::NOT_FOUND)?;
 
-    if let Some(item) = lock.todos.get(&id) {
-        Ok(Html(render_lazy(rsx! {
-            TodoEditComponent {
-                item: item.clone()
-            }
-        })))
-    } else {
-        Err((StatusCode::NOT_FOUND, format!("Todo not found: {}", id)))
-    }
+    Ok(Html(render_lazy(rsx! { TodoEditComponent { item: item } })))
 }
 
 async fn update_todo(
-    State(state): State<Arc<RwLock<AppState>>>,
+    State(db): State<Db>,
     Path(id): Path<Uuid>,
     Form(todo_update): Form<TodoUpdate>,
-) -> Result<Html<String>, AppError> {
-    let mut lock = state.write().unwrap();
+) -> Result<impl IntoResponse, StatusCode> {
+    let mut todo = db
+        .read()
+        .unwrap()
+        .todos
+        .get(&id)
+        .cloned()
+        .ok_or(StatusCode::NOT_FOUND)?;
 
-    if let Some(item) = lock.todos.get_mut(&id) {
-        item.is_done = todo_update.is_done.unwrap_or(item.is_done);
-        item.text = todo_update.text.unwrap_or_else(|| item.text.clone());
+    let mut state = db.write().unwrap();
 
-        let item = item.clone();
+    if let Some(is_done) = todo_update.is_done {
+        todo.is_done = is_done;
 
-        if todo_update.is_done.is_some() {
-            if item.is_done {
-                lock.num_completed_items += 1;
-                lock.num_active_items -= 1;
-            } else {
-                lock.num_completed_items -= 1;
-                lock.num_active_items += 1;
-            }
+        if todo.is_done {
+            state.num_completed_items += 1;
+            state.num_active_items -= 1;
+        } else {
+            state.num_completed_items -= 1;
+            state.num_active_items += 1;
+        }
+    }
+
+    if let Some(text) = todo_update.text {
+        todo.text = text;
+    }
+
+    state.todos.insert(todo.id, todo.clone());
+    drop(state);
+
+    let state = db.read().unwrap();
+
+    Ok(Html(render_lazy(rsx! {
+        match &state.selected_filter {
+            TodoListFilter::Active if todo.is_done => rsx!(""),
+            TodoListFilter::Active | TodoListFilter::All => rsx!(TodoItemComponent { todo: todo }),
+            TodoListFilter::Completed if todo.is_done => rsx!(TodoItemComponent { todo: todo }),
+            TodoListFilter::Completed => rsx!(""),
         }
 
-        let todo_item_component = match &lock.selected_filter {
-            TodoListFilter::Active if item.is_done => rsx!(""),
-            TodoListFilter::Active | TodoListFilter::All => rsx!(TodoItemComponent { item: item }),
-            TodoListFilter::Completed if item.is_done => rsx!(TodoItemComponent { item: item }),
-            TodoListFilter::Completed => rsx!(""),
-        };
+        TodoCounterComponent { filter: TodoListFilter::Completed, num_items: state.num_completed_items }
+        TodoCounterComponent { filter: TodoListFilter::Active, num_items: state.num_active_items }
 
-        Ok(Html(render_lazy(rsx! {
-            todo_item_component,
-            TodoCounterComponent {
-                name: "active".to_string(),
-                num_items: lock.num_active_items,
-            },
-            TodoCounterComponent {
-                name: "completed".to_string(),
-                num_items: lock.num_completed_items,
-            },
-            TodoDeleteCompletedComponent {
-                is_disabled: lock.num_completed_items == 0,
-            },
-        })))
-    } else {
-        Err((StatusCode::NOT_FOUND, format!("Todo not Found: {}", id)))
-    }
+        TodoDeleteCompletedComponent { is_disabled: state.num_completed_items == 0 }
+    })))
 }
 
 async fn delete_todo(
-    State(state): State<Arc<RwLock<AppState>>>,
+    State(db): State<Db>,
     Path(id): Path<Uuid>,
-) -> Result<Html<String>, AppError> {
-    let mut lock = state.write().unwrap();
+) -> Result<impl IntoResponse, StatusCode> {
+    let mut state = db.write().unwrap();
 
-    if let Some(item) = lock.todos.remove(&id) {
+    if let Some(item) = state.todos.remove(&id) {
         if item.is_done {
-            lock.num_completed_items -= 1;
+            state.num_completed_items -= 1;
         } else {
-            lock.num_active_items -= 1;
+            state.num_active_items -= 1;
         }
 
-        lock.num_all_items -= 1;
+        state.num_all_items -= 1;
 
         Ok(Html(render_lazy(rsx! {
-            TodoCounterComponent {
-                name: "all".to_string(),
-                num_items: lock.num_all_items,
-            },
-            TodoCounterComponent {
-                name: "active".to_string(),
-                num_items: lock.num_active_items,
-            },
-            TodoCounterComponent {
-                name: "completed".to_string(),
-                num_items: lock.num_completed_items,
-            },
-            TodoDeleteCompletedComponent {
-                is_disabled: lock.num_completed_items == 0,
-            },
+            TodoCounterComponent { filter: TodoListFilter::Completed, num_items: state.num_completed_items }
+            TodoCounterComponent { filter: TodoListFilter::Active, num_items: state.num_active_items }
+            TodoCounterComponent { filter: TodoListFilter::All, num_items: state.num_all_items }
+
+            TodoDeleteCompletedComponent { is_disabled: state.num_completed_items == 0 }
         })))
     } else {
-        Err((StatusCode::NOT_FOUND, format!("Todo not found: {}", id)))
+        Err(StatusCode::NOT_FOUND)
     }
 }
