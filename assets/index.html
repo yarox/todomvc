@@ -46,6 +46,7 @@
                 type="text"
                 name="text"
                 placeholder="What needs to be done?"
+                autofocus
                 required
               >
             </div>
@@ -112,8 +113,19 @@
 
           <div class="panel-block">
             <button
+              id="todo-toggle-completed"
+              class="button is-link is-outlined is-fullwidth mr-1"
+              hx-patch="/todo?is_checked=true"
+              hx-target="#todo-list"
+              hx-swap="outerHTML"
+              hx-swap-oob="true"
+              disabled
+            >
+              Check all
+            </button>
+            <button
               id="todo-delete-completed"
-              class="button is-link is-outlined is-fullwidth"
+              class="button is-danger is-outlined is-fullwidth ml-1"
               hx-delete="/todo"
               hx-target="#todo-list"
               hx-swap="outerHTML"
@@ -128,4 +140,5 @@
     </section>
   </div>
 </body>
+
 </html>

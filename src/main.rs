@@ -25,13 +25,27 @@ use uuid::Uuid;
 
 type Db = Arc<RwLock<AppState>>;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct AppState {
     todos: HashMap<Uuid, Todo>,
     num_all_items: u32,
     num_active_items: u32,
     num_completed_items: u32,
     selected_filter: TodoListFilter,
+    toggle_is_checked: bool,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            todos: HashMap::new(),
+            num_all_items: 0,
+            num_active_items: 0,
+            num_completed_items: 0,
+            selected_filter: TodoListFilter::All,
+            toggle_is_checked: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -64,9 +78,8 @@ struct TodoUpdate {
     is_done: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Default, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
 pub enum TodoListFilter {
-    #[default]
     All,
     Active,
     Completed,
@@ -85,6 +98,11 @@ impl fmt::Display for TodoListFilter {
 #[derive(Debug, Deserialize)]
 pub struct TodoListParams {
     filter: TodoListFilter,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ToggleCompletedParams {
+    is_checked: bool,
 }
 
 #[derive(PartialEq, Props)]
@@ -107,6 +125,7 @@ fn TodoItemComponent(cx: Scope<TodoItemComponentProps>) -> Element {
             p {
                 class: "is-flex-grow-1",
                 "hx-get": "/todo/{cx.props.todo.id}",
+                "hx-trigger": "dblclick",
                 "hx-target": "this",
                 "hx-swap": "outerHTML",
 
@@ -117,7 +136,7 @@ fn TodoItemComponent(cx: Scope<TodoItemComponentProps>) -> Element {
                 }
             }
             button {
-                class: "delete is-medium",
+                class: "delete is-medium ml-2",
                 "hx-delete": "/todo/{cx.props.todo.id}",
                 "hx-target": "closest .panel-block",
                 "hx-swap": "outerHTML"
@@ -138,7 +157,15 @@ fn TodoEditComponent(cx: Scope<TodoEditComponentProps>) -> Element {
             "hx-patch": "/todo/{cx.props.item.id}",
             "hx-target": "closest .panel-block",
             "hx-swap": "outerHTML",
-            p { input { "type": "text", name: "text", value: "{cx.props.item.text}" } }
+            p {
+                input {
+                    class: "input",
+                    "type": "text",
+                    name: "text",
+                    value: "{cx.props.item.text}",
+                    autofocus: "true"
+                }
+            }
         }
     })
 }
@@ -150,7 +177,8 @@ struct TodoListComponentProps {
 
 fn TodoListComponent(cx: Scope<TodoListComponentProps>) -> Element {
     cx.render(rsx! {
-        span { id: "todo-list",
+        span {
+            id: "todo-list",
             for todo in cx.props.todos.clone() {
                 TodoItemComponent { todo: todo }
             }
@@ -184,13 +212,34 @@ fn TodoDeleteCompletedComponent(cx: Scope<TodoDeleteCompletedComponentProps>) ->
     cx.render(rsx! {
         button {
             id: "todo-delete-completed",
-            class: "button is-link is-outlined is-fullwidth",
+            class: "button is-danger is-outlined is-fullwidth ml-1",
             "hx-target": "#todo-list",
             "hx-swap": "outerHTML",
             "hx-delete": "/todo",
             "hx-swap-oob": true,
             disabled: if cx.props.is_disabled { Some(true) } else { None },
             "Delete completed"
+        }
+    })
+}
+
+#[derive(PartialEq, Props)]
+struct TodoToggleCompletedComponentProps {
+    is_disabled: bool,
+    is_checked: bool,
+}
+
+fn TodoToggleCompletedComponent(cx: Scope<TodoToggleCompletedComponentProps>) -> Element {
+    cx.render(rsx! {
+        button {
+            id: "todo-toggle-completed",
+            class: "button is-link is-outlined is-fullwidth mr-1",
+            "hx-target": "#todo-list",
+            "hx-swap": "outerHTML",
+            "hx-patch": "/todo?is_checked={cx.props.is_checked}",
+            "hx-swap-oob": true,
+            disabled: if cx.props.is_disabled { Some(true) } else { None },
+            if cx.props.is_checked { "Check all" } else { "Uncheck all" },
         }
     })
 }
@@ -206,6 +255,7 @@ async fn main() {
             "/todo",
             get(list_todo)
                 .post(create_todo)
+                .patch(toggle_completed_todo)
                 .delete(delete_completed_todo),
         )
         .route(
@@ -252,6 +302,7 @@ async fn list_todo(
         TodoCounterComponent { filter: TodoListFilter::All, num_items: state.num_all_items }
 
         TodoDeleteCompletedComponent { is_disabled: state.num_completed_items == 0 }
+        TodoToggleCompletedComponent { is_disabled: state.num_all_items == 0, is_checked: state.toggle_is_checked }
     }))
 }
 
@@ -264,6 +315,7 @@ async fn create_todo(State(db): State<Db>, Form(todo_new): Form<TodoCreate>) -> 
     let mut state = db.write().unwrap();
 
     state.todos.insert(todo.id, todo.clone());
+    state.toggle_is_checked = true;
     state.num_active_items += 1;
     state.num_all_items += 1;
 
@@ -280,6 +332,61 @@ async fn create_todo(State(db): State<Db>, Form(todo_new): Form<TodoCreate>) -> 
 
         TodoCounterComponent { filter: TodoListFilter::Active, num_items: state.num_active_items }
         TodoCounterComponent { filter: TodoListFilter::All, num_items: state.num_all_items }
+        TodoToggleCompletedComponent { is_disabled: false, is_checked: state.toggle_is_checked }
+    }))
+}
+
+async fn toggle_completed_todo(
+    State(db): State<Db>,
+    Query(ToggleCompletedParams { is_checked }): Query<ToggleCompletedParams>,
+) -> impl IntoResponse {
+    if db.read().unwrap().num_all_items == 0 {
+        return Html(render_lazy(rsx! { TodoListComponent { todos: Vec::new() }}));
+    }
+
+    let mut state = db.write().unwrap();
+
+    for todo in state.todos.values_mut() {
+        todo.is_done = is_checked;
+    }
+
+    if is_checked {
+        state.num_completed_items = state.num_all_items;
+        state.num_active_items = 0;
+    } else {
+        state.num_completed_items = 0;
+        state.num_active_items = state.num_all_items;
+    }
+
+    state.toggle_is_checked = !is_checked;
+
+    drop(state);
+
+    let state = db.read().unwrap();
+    let selected_filter = &state.selected_filter;
+
+    let mut todos = state
+        .todos
+        .values()
+        .filter(|item| match selected_filter {
+            TodoListFilter::Completed => item.is_done,
+            TodoListFilter::Active => !item.is_done,
+            TodoListFilter::All => true,
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    todos.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+    Html(render_lazy(rsx! {
+        TodoListComponent { todos: todos }
+
+        TodoCounterComponent { filter: TodoListFilter::Completed, num_items: state.num_completed_items }
+        TodoCounterComponent { filter: TodoListFilter::Active, num_items: state.num_active_items }
+        TodoCounterComponent { filter: TodoListFilter::All, num_items: state.num_all_items }
+
+        TodoDeleteCompletedComponent { is_disabled: state.num_completed_items == 0 }
+        TodoToggleCompletedComponent { is_disabled: state.num_all_items == 0, is_checked: state.toggle_is_checked }
     }))
 }
 
@@ -288,6 +395,7 @@ async fn delete_completed_todo(State(db): State<Db>) -> impl IntoResponse {
 
     state.todos.retain(|_, v| !v.is_done);
     state.num_all_items -= state.num_completed_items;
+    state.toggle_is_checked = true;
     state.num_completed_items = 0;
 
     drop(state);
@@ -308,6 +416,7 @@ async fn delete_completed_todo(State(db): State<Db>) -> impl IntoResponse {
         TodoCounterComponent { filter: TodoListFilter::All, num_items: state.num_all_items }
 
         TodoDeleteCompletedComponent { is_disabled: true }
+        TodoToggleCompletedComponent { is_disabled: state.num_all_items == 0, is_checked: state.toggle_is_checked }
     }))
 }
 
@@ -391,6 +500,7 @@ async fn delete_todo(
         }
 
         state.num_all_items -= 1;
+        state.toggle_is_checked = state.num_all_items == 0;
 
         Ok(Html(render_lazy(rsx! {
             TodoCounterComponent { filter: TodoListFilter::Completed, num_items: state.num_completed_items }
@@ -398,6 +508,7 @@ async fn delete_todo(
             TodoCounterComponent { filter: TodoListFilter::All, num_items: state.num_all_items }
 
             TodoDeleteCompletedComponent { is_disabled: state.num_completed_items == 0 }
+            TodoToggleCompletedComponent { is_disabled: state.num_all_items == 0, is_checked: state.toggle_is_checked }
         })))
     } else {
         Err(StatusCode::NOT_FOUND)
