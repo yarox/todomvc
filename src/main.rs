@@ -328,18 +328,13 @@ async fn create_todo(
     State(shared_state): State<SharedState>,
     Form(todo_new): Form<TodoCreate>,
 ) -> impl IntoResponse {
-    let todo = Todo::new(&todo_new.text);
-
     let mut state = shared_state.write().unwrap();
+    let todo = Todo::new(&todo_new.text);
 
     state.todo_repo.todos.insert(todo.id, todo.clone());
     state.toggle_action = TodoToggleAction::Check;
     state.todo_repo.num_active_items += 1;
     state.todo_repo.num_all_items += 1;
-
-    drop(state);
-
-    let state = shared_state.read().unwrap();
 
     Html(render_lazy(rsx! {
         if state.selected_filter == TodoListFilter::Completed {
@@ -427,9 +422,6 @@ async fn delete_completed_todo(State(shared_state): State<SharedState>) -> impl 
     state.toggle_action = TodoToggleAction::Check;
     state.todo_repo.num_completed_items = 0;
 
-    drop(state);
-
-    let state = shared_state.read().unwrap();
     let todos = if state.selected_filter == TodoListFilter::Completed {
         Vec::new()
     } else {
@@ -498,9 +490,6 @@ async fn update_todo(
     }
 
     state.todo_repo.todos.insert(todo.id, todo.clone());
-    drop(state);
-
-    let state = shared_state.read().unwrap();
 
     Ok(Html(render_lazy(rsx! {
         match &state.selected_filter {
