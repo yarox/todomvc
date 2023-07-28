@@ -10,6 +10,8 @@ dioxus = { version = "0.3.2" }
 dioxus-ssr = { version = "0.3.0" }
 axum = "0.6.18"
 tokio = { version = "1.29.1", features = ["full"] }
-tower-http = { version = "0.4.0", features = ["fs"] }
+tower-http = { version = "0.4.0", features = ["fs", "trace"] }
 serde = { version = "1.0", features = ["derive"] }
 uuid = { version = "1.0", features = ["serde", "v4"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

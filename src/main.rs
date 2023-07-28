@@ -18,7 +18,11 @@ use std::{
     net::SocketAddr,
     sync::{Arc, RwLock},
 };
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::{
+    services::{ServeDir, ServeFile},
+    trace::TraceLayer,
+};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
 pub mod components;
@@ -79,6 +83,14 @@ pub struct ToggleCompletedParams {
 async fn main() {
     let shared_state = Arc::new(RwLock::new(AppState::default()));
 
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "todomvc=debug,tower_http=debug".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
     let app = Router::new()
         .nest_service("/", ServeFile::new("assets/index.html"))
         .nest_service("/assets", ServeDir::new("assets"))
@@ -93,10 +105,11 @@ async fn main() {
             "/todo/:id",
             get(edit_todo).patch(update_todo).delete(delete_todo),
         )
+        .layer(TraceLayer::new_for_http())
         .with_state(shared_state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
-    println!("listening on {}", addr);
+    tracing::debug!("listening on {}", addr);
 
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
