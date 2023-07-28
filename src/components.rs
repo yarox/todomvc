@@ -100,6 +100,21 @@ pub fn TodoCounterComponent(cx: Scope<TodoCounterComponentProps>) -> Element {
 }
 
 #[derive(Props, PartialEq, Eq)]
+pub struct TodoTabsComponentProps {
+    num_completed_items: u32,
+    num_active_items: u32,
+    num_all_items: u32,
+}
+
+pub fn TodoTabsComponent(cx: Scope<TodoTabsComponentProps>) -> Element {
+    cx.render(rsx! {
+        TodoCounterComponent { filter: TodoListFilter::Completed, num_items: cx.props.num_completed_items }
+        TodoCounterComponent { filter: TodoListFilter::Active, num_items: cx.props.num_active_items }
+        TodoCounterComponent { filter: TodoListFilter::All, num_items: cx.props.num_all_items }
+    })
+}
+
+#[derive(Props, PartialEq, Eq)]
 pub struct TodoDeleteCompletedComponentProps {
     is_disabled: bool,
 }

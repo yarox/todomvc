@@ -129,9 +129,11 @@ async fn list_todo(
     Html(render_lazy(rsx! {
         TodoListComponent { todos: todos }
 
-        TodoCounterComponent { filter: TodoListFilter::Completed, num_items: state.todo_db.num_completed_items }
-        TodoCounterComponent { filter: TodoListFilter::Active, num_items: state.todo_db.num_active_items }
-        TodoCounterComponent { filter: TodoListFilter::All, num_items: state.todo_db.num_all_items }
+        TodoTabsComponent {
+            num_completed_items: state.todo_db.num_completed_items,
+            num_active_items: state.todo_db.num_active_items,
+            num_all_items: state.todo_db.num_all_items
+        }
 
         TodoDeleteCompletedComponent { is_disabled: state.todo_db.num_completed_items == 0 }
         TodoToggleCompletedComponent { is_disabled: state.todo_db.num_all_items == 0, action: state.toggle_action }
@@ -157,8 +159,12 @@ async fn create_todo(
             rsx!(TodoItemComponent { todo: todo })
         }
 
-        TodoCounterComponent { filter: TodoListFilter::Active, num_items: state.todo_db.num_active_items }
-        TodoCounterComponent { filter: TodoListFilter::All, num_items: state.todo_db.num_all_items }
+        TodoTabsComponent {
+            num_completed_items: state.todo_db.num_completed_items,
+            num_active_items: state.todo_db.num_active_items,
+            num_all_items: state.todo_db.num_all_items
+        }
+
         TodoToggleCompletedComponent { is_disabled: false, action: state.toggle_action }
     }))
 }
@@ -216,9 +222,11 @@ async fn toggle_completed_todo(
     Html(render_lazy(rsx! {
         TodoListComponent { todos: todos }
 
-        TodoCounterComponent { filter: TodoListFilter::Completed, num_items: state.todo_db.num_completed_items }
-        TodoCounterComponent { filter: TodoListFilter::Active, num_items: state.todo_db.num_active_items }
-        TodoCounterComponent { filter: TodoListFilter::All, num_items: state.todo_db.num_all_items }
+        TodoTabsComponent {
+            num_completed_items: state.todo_db.num_completed_items,
+            num_active_items: state.todo_db.num_active_items,
+            num_all_items: state.todo_db.num_all_items
+        }
 
         TodoDeleteCompletedComponent { is_disabled: state.todo_db.num_completed_items == 0 }
         TodoToggleCompletedComponent { is_disabled: state.todo_db.num_all_items == 0, action: state.toggle_action }
@@ -244,8 +252,11 @@ async fn delete_completed_todo(State(shared_state): State<SharedState>) -> impl 
     Html(render_lazy(rsx! {
         TodoListComponent { todos: todos }
 
-        TodoCounterComponent { filter: TodoListFilter::Completed, num_items: state.todo_db.num_completed_items }
-        TodoCounterComponent { filter: TodoListFilter::All, num_items: state.todo_db.num_all_items }
+        TodoTabsComponent {
+            num_completed_items: state.todo_db.num_completed_items,
+            num_active_items: state.todo_db.num_active_items,
+            num_all_items: state.todo_db.num_all_items
+        }
 
         TodoDeleteCompletedComponent { is_disabled: true }
         TodoToggleCompletedComponent { is_disabled: state.todo_db.num_all_items == 0, action: state.toggle_action }
@@ -310,8 +321,11 @@ async fn update_todo(
             TodoListFilter::Completed => rsx!(""),
         }
 
-        TodoCounterComponent { filter: TodoListFilter::Completed, num_items: state.todo_db.num_completed_items }
-        TodoCounterComponent { filter: TodoListFilter::Active, num_items: state.todo_db.num_active_items }
+        TodoTabsComponent {
+            num_completed_items: state.todo_db.num_completed_items,
+            num_active_items: state.todo_db.num_active_items,
+            num_all_items: state.todo_db.num_all_items
+        }
 
         TodoDeleteCompletedComponent { is_disabled: state.todo_db.num_completed_items == 0 }
     })))
@@ -339,9 +353,11 @@ async fn delete_todo(
         }
 
         Ok(Html(render_lazy(rsx! {
-            TodoCounterComponent { filter: TodoListFilter::Completed, num_items: state.todo_db.num_completed_items }
-            TodoCounterComponent { filter: TodoListFilter::Active, num_items: state.todo_db.num_active_items }
-            TodoCounterComponent { filter: TodoListFilter::All, num_items: state.todo_db.num_all_items }
+            TodoTabsComponent {
+                num_completed_items: state.todo_db.num_completed_items,
+                num_active_items: state.todo_db.num_active_items,
+                num_all_items: state.todo_db.num_all_items
+            }
 
             TodoDeleteCompletedComponent { is_disabled: state.todo_db.num_completed_items == 0 }
             TodoToggleCompletedComponent { is_disabled: state.todo_db.num_all_items == 0, action: state.toggle_action }
