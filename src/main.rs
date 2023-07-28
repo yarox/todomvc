@@ -58,12 +58,12 @@ struct Todo {
     id: Uuid,
 }
 
-impl Default for Todo {
-    fn default() -> Self {
+impl Todo {
+    fn new(text: &str) -> Self {
         Self {
             created_at: SystemTime::now(),
             is_completed: false,
-            text: String::new(),
+            text: String::from(text),
             id: Uuid::new_v4(),
         }
     }
@@ -313,10 +313,7 @@ async fn create_todo(
     State(shared_state): State<SharedState>,
     Form(todo_new): Form<TodoCreate>,
 ) -> impl IntoResponse {
-    let todo = Todo {
-        text: todo_new.text,
-        ..Default::default()
-    };
+    let todo = Todo::new(&todo_new.text);
 
     let mut state = shared_state.write().unwrap();
 
