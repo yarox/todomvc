@@ -31,18 +31,50 @@ struct TodoRepo {
     todos: HashMap<Uuid, Todo>,
 }
 
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
+enum TodoListFilter {
+    Completed,
+    Active,
+    All,
+}
+
+impl fmt::Display for TodoListFilter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Completed => write!(f, "completed"),
+            Self::Active => write!(f, "active"),
+            Self::All => write!(f, "all"),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
+enum TodoToggleAction {
+    Uncheck,
+    Check,
+}
+
+impl fmt::Display for TodoToggleAction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Uncheck => write!(f, "Uncheck"),
+            Self::Check => write!(f, "Check"),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct AppState {
-    toggle_is_completed: bool,
     selected_filter: TodoListFilter,
+    toggle_action: TodoToggleAction,
     todo_repo: TodoRepo,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
-            toggle_is_completed: true,
             selected_filter: TodoListFilter::All,
+            toggle_action: TodoToggleAction::Check,
             todo_repo: TodoRepo::default(),
         }
     }
@@ -80,23 +112,6 @@ struct TodoUpdate {
     text: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
-pub enum TodoListFilter {
-    Completed,
-    Active,
-    All,
-}
-
-impl fmt::Display for TodoListFilter {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Completed => write!(f, "completed"),
-            Self::Active => write!(f, "active"),
-            Self::All => write!(f, "all"),
-        }
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct TodoListParams {
     filter: TodoListFilter,
@@ -104,7 +119,7 @@ pub struct TodoListParams {
 
 #[derive(Debug, Deserialize)]
 pub struct ToggleCompletedParams {
-    is_completed: bool,
+    action: TodoToggleAction,
 }
 
 #[derive(PartialEq, Props)]
@@ -228,7 +243,7 @@ fn TodoDeleteCompletedComponent(cx: Scope<TodoDeleteCompletedComponentProps>) ->
 #[derive(PartialEq, Props)]
 struct TodoToggleCompletedComponentProps {
     is_disabled: bool,
-    is_completed: bool,
+    action: TodoToggleAction,
 }
 
 fn TodoToggleCompletedComponent(cx: Scope<TodoToggleCompletedComponentProps>) -> Element {
@@ -238,10 +253,10 @@ fn TodoToggleCompletedComponent(cx: Scope<TodoToggleCompletedComponentProps>) ->
             class: "button is-link is-outlined is-fullwidth mr-1",
             "hx-target": "#todo-list",
             "hx-swap": "outerHTML",
-            "hx-patch": "/todo?is_completed={cx.props.is_completed}",
+            "hx-patch": "/todo?action={cx.props.action}",
             "hx-swap-oob": true,
             disabled: if cx.props.is_disabled { Some(true) } else { None },
-            if cx.props.is_completed { "Check all" } else { "Uncheck all" },
+            "{cx.props.action} all"
         }
     })
 }
@@ -305,7 +320,7 @@ async fn list_todo(
         TodoCounterComponent { filter: TodoListFilter::All, num_items: state.todo_repo.num_all_items }
 
         TodoDeleteCompletedComponent { is_disabled: state.todo_repo.num_completed_items == 0 }
-        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, is_completed: state.toggle_is_completed }
+        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action.clone() }
     }))
 }
 
@@ -318,7 +333,7 @@ async fn create_todo(
     let mut state = shared_state.write().unwrap();
 
     state.todo_repo.todos.insert(todo.id, todo.clone());
-    state.toggle_is_completed = true;
+    state.toggle_action = TodoToggleAction::Check;
     state.todo_repo.num_active_items += 1;
     state.todo_repo.num_all_items += 1;
 
@@ -335,19 +350,31 @@ async fn create_todo(
 
         TodoCounterComponent { filter: TodoListFilter::Active, num_items: state.todo_repo.num_active_items }
         TodoCounterComponent { filter: TodoListFilter::All, num_items: state.todo_repo.num_all_items }
-        TodoToggleCompletedComponent { is_disabled: false, is_completed: state.toggle_is_completed }
+        TodoToggleCompletedComponent { is_disabled: false, action: state.toggle_action.clone() }
     }))
 }
 
 async fn toggle_completed_todo(
     State(shared_state): State<SharedState>,
-    Query(ToggleCompletedParams { is_completed }): Query<ToggleCompletedParams>,
+    Query(ToggleCompletedParams { action }): Query<ToggleCompletedParams>,
 ) -> impl IntoResponse {
     if shared_state.read().unwrap().todo_repo.num_all_items == 0 {
         return Html(render_lazy(rsx! { TodoListComponent { todos: Vec::new() }}));
     }
 
     let mut state = shared_state.write().unwrap();
+    let is_completed;
+
+    match action {
+        TodoToggleAction::Uncheck => {
+            state.toggle_action = TodoToggleAction::Check;
+            is_completed = false;
+        }
+        TodoToggleAction::Check => {
+            state.toggle_action = TodoToggleAction::Uncheck;
+            is_completed = true;
+        }
+    };
 
     for todo in state.todo_repo.todos.values_mut() {
         todo.is_completed = is_completed;
@@ -360,8 +387,6 @@ async fn toggle_completed_todo(
         state.todo_repo.num_completed_items = 0;
         state.todo_repo.num_active_items = state.todo_repo.num_all_items;
     }
-
-    state.toggle_is_completed = !is_completed;
 
     drop(state);
 
@@ -390,7 +415,7 @@ async fn toggle_completed_todo(
         TodoCounterComponent { filter: TodoListFilter::All, num_items: state.todo_repo.num_all_items }
 
         TodoDeleteCompletedComponent { is_disabled: state.todo_repo.num_completed_items == 0 }
-        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, is_completed: state.toggle_is_completed }
+        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action.clone() }
     }))
 }
 
@@ -399,7 +424,7 @@ async fn delete_completed_todo(State(shared_state): State<SharedState>) -> impl 
 
     state.todo_repo.todos.retain(|_, v| !v.is_completed);
     state.todo_repo.num_all_items -= state.todo_repo.num_completed_items;
-    state.toggle_is_completed = true;
+    state.toggle_action = TodoToggleAction::Check;
     state.todo_repo.num_completed_items = 0;
 
     drop(state);
@@ -420,7 +445,7 @@ async fn delete_completed_todo(State(shared_state): State<SharedState>) -> impl 
         TodoCounterComponent { filter: TodoListFilter::All, num_items: state.todo_repo.num_all_items }
 
         TodoDeleteCompletedComponent { is_disabled: true }
-        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, is_completed: state.toggle_is_completed }
+        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action.clone() }
     }))
 }
 
@@ -506,7 +531,12 @@ async fn delete_todo(
         }
 
         state.todo_repo.num_all_items -= 1;
-        state.toggle_is_completed = state.todo_repo.num_all_items == 0;
+
+        if state.todo_repo.num_all_items == 0 {
+            state.toggle_action = TodoToggleAction::Check
+        } else {
+            state.toggle_action = TodoToggleAction::Uncheck
+        }
 
         Ok(Html(render_lazy(rsx! {
             TodoCounterComponent { filter: TodoListFilter::Completed, num_items: state.todo_repo.num_completed_items }
@@ -514,7 +544,7 @@ async fn delete_todo(
             TodoCounterComponent { filter: TodoListFilter::All, num_items: state.todo_repo.num_all_items }
 
             TodoDeleteCompletedComponent { is_disabled: state.todo_repo.num_completed_items == 0 }
-            TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, is_completed: state.toggle_is_completed }
+            TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action.clone() }
         })))
     } else {
         Err(StatusCode::NOT_FOUND)
