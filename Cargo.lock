@@ -1497,6 +1497,7 @@ dependencies = [
  "dioxus-ssr",
  "serde",
  "tokio",
+ "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",
