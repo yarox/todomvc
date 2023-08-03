@@ -6,7 +6,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Response},
     routing::get,
     Form, Router,
 };
@@ -14,7 +14,6 @@ use dioxus::prelude::*;
 use dioxus_ssr::render_lazy;
 use serde::Deserialize;
 use std::{
-    collections::HashMap,
     net::SocketAddr,
     sync::{Arc, RwLock},
 };
@@ -27,23 +26,20 @@ use uuid::Uuid;
 
 pub mod components;
 pub mod models;
+pub mod repository;
 
-use components::*;
-use models::*;
-
-#[derive(Debug, Default)]
-struct TodoDb {
-    num_completed_items: u32,
-    num_active_items: u32,
-    num_all_items: u32,
-    todos: HashMap<Uuid, Todo>,
-}
+use components::{
+    TodoDeleteCompletedComponent, TodoEditComponent, TodoItemComponent, TodoListComponent,
+    TodoTabsComponent, TodoToggleCompletedComponent,
+};
+use models::{TodoListFilter, TodoToggleAction};
+use repository::{TodoRepo, TodoRepoError};
 
 #[derive(Debug)]
 struct AppState {
     selected_filter: TodoListFilter,
     toggle_action: TodoToggleAction,
-    todo_db: TodoDb,
+    todo_repo: TodoRepo,
 }
 
 impl Default for AppState {
@@ -51,12 +47,32 @@ impl Default for AppState {
         Self {
             selected_filter: TodoListFilter::All,
             toggle_action: TodoToggleAction::Check,
-            todo_db: TodoDb::default(),
+            todo_repo: TodoRepo::default(),
         }
     }
 }
 
 type SharedState = Arc<RwLock<AppState>>;
+
+enum AppError {
+    TodoRepo(TodoRepoError),
+}
+
+impl From<TodoRepoError> for AppError {
+    fn from(inner: TodoRepoError) -> Self {
+        Self::TodoRepo(inner)
+    }
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let (status, message) = match self {
+            Self::TodoRepo(TodoRepoError::NotFound) => (StatusCode::NOT_FOUND, "Todo not found"),
+        };
+
+        (status, message).into_response()
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct TodoCreate {
@@ -70,17 +86,17 @@ struct TodoUpdate {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct TodoListParams {
+pub struct ListTodoParams {
     filter: TodoListFilter,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ToggleCompletedParams {
+pub struct ToggleCompletedTodoParams {
     action: TodoToggleAction,
 }
 
 pub fn app() -> Router {
-    let shared_state = Arc::new(RwLock::new(AppState::default()));
+    let shared_state = SharedState::default();
 
     Router::new()
         .nest_service("/", ServeFile::new("assets/index.html"))
@@ -120,63 +136,45 @@ pub async fn run() {
 
 async fn list_todo(
     State(shared_state): State<SharedState>,
-    Query(TodoListParams { filter }): Query<TodoListParams>,
+    Query(ListTodoParams { filter }): Query<ListTodoParams>,
 ) -> impl IntoResponse {
     shared_state.write().unwrap().selected_filter = filter;
 
     let state = shared_state.read().unwrap();
-
-    let mut todos = state
-        .todo_db
-        .todos
-        .values()
-        .filter(|item| match filter {
-            TodoListFilter::Completed => item.is_completed,
-            TodoListFilter::Active => !item.is_completed,
-            TodoListFilter::All => true,
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-
-    todos.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    let todos = state.todo_repo.list(&filter);
 
     Html(render_lazy(rsx! {
         TodoListComponent { todos: todos }
 
         TodoTabsComponent {
-            num_completed_items: state.todo_db.num_completed_items,
-            num_active_items: state.todo_db.num_active_items,
-            num_all_items: state.todo_db.num_all_items
+            num_completed_items: state.todo_repo.num_completed_items,
+            num_active_items: state.todo_repo.num_active_items,
+            num_all_items: state.todo_repo.num_all_items
         }
 
-        TodoDeleteCompletedComponent { is_disabled: state.todo_db.num_completed_items == 0 }
-        TodoToggleCompletedComponent { is_disabled: state.todo_db.num_all_items == 0, action: state.toggle_action }
+        TodoDeleteCompletedComponent { is_disabled: state.todo_repo.num_completed_items == 0 }
+        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action }
     }))
 }
 
 async fn create_todo(
     State(shared_state): State<SharedState>,
-    Form(todo_new): Form<TodoCreate>,
+    Form(todo_create): Form<TodoCreate>,
 ) -> impl IntoResponse {
     let mut state = shared_state.write().unwrap();
-    let todo = Todo::new(&todo_new.text);
+    let todo = state.todo_repo.create(&todo_create.text);
 
-    state.todo_db.todos.insert(todo.id, todo.clone());
     state.toggle_action = TodoToggleAction::Check;
-    state.todo_db.num_active_items += 1;
-    state.todo_db.num_all_items += 1;
 
     Html(render_lazy(rsx! {
-        if state.selected_filter == TodoListFilter::Completed {
-            rsx!("")
-        } else {
+        if state.selected_filter != TodoListFilter::Completed {
             rsx!(TodoItemComponent { todo: todo })
         }
 
         TodoTabsComponent {
-            num_completed_items: state.todo_db.num_completed_items,
-            num_active_items: state.todo_db.num_active_items,
-            num_all_items: state.todo_db.num_all_items
+            num_completed_items: state.todo_repo.num_completed_items,
+            num_active_items: state.todo_repo.num_active_items,
+            num_all_items: state.todo_repo.num_all_items
         }
 
         TodoToggleCompletedComponent { is_disabled: false, action: state.toggle_action }
@@ -185,111 +183,59 @@ async fn create_todo(
 
 async fn toggle_completed_todo(
     State(shared_state): State<SharedState>,
-    Query(ToggleCompletedParams { action }): Query<ToggleCompletedParams>,
+    Query(ToggleCompletedTodoParams { action }): Query<ToggleCompletedTodoParams>,
 ) -> impl IntoResponse {
-    if shared_state.read().unwrap().todo_db.num_all_items == 0 {
-        return Html(render_lazy(rsx! { TodoListComponent { todos: Vec::new() }}));
-    }
-
     let mut state = shared_state.write().unwrap();
-    let is_completed;
 
-    match action {
-        TodoToggleAction::Uncheck => {
-            state.toggle_action = TodoToggleAction::Check;
-            is_completed = false;
-        }
-        TodoToggleAction::Check => {
-            state.toggle_action = TodoToggleAction::Uncheck;
-            is_completed = true;
-        }
+    state.toggle_action = match action {
+        TodoToggleAction::Uncheck => TodoToggleAction::Check,
+        TodoToggleAction::Check => TodoToggleAction::Uncheck,
     };
 
-    for todo in state.todo_db.todos.values_mut() {
-        todo.is_completed = is_completed;
-    }
-
-    if is_completed {
-        state.todo_db.num_completed_items = state.todo_db.num_all_items;
-        state.todo_db.num_active_items = 0;
-    } else {
-        state.todo_db.num_completed_items = 0;
-        state.todo_db.num_active_items = state.todo_db.num_all_items;
-    }
-
-    let selected_filter = &state.selected_filter;
-
-    let mut todos = state
-        .todo_db
-        .todos
-        .values()
-        .filter(|item| match selected_filter {
-            TodoListFilter::Completed => item.is_completed,
-            TodoListFilter::Active => !item.is_completed,
-            TodoListFilter::All => true,
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-
-    todos.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    state.todo_repo.toggle_completed(&action);
+    let todos = state.todo_repo.list(&state.selected_filter);
 
     Html(render_lazy(rsx! {
         TodoListComponent { todos: todos }
 
         TodoTabsComponent {
-            num_completed_items: state.todo_db.num_completed_items,
-            num_active_items: state.todo_db.num_active_items,
-            num_all_items: state.todo_db.num_all_items
+            num_completed_items: state.todo_repo.num_completed_items,
+            num_active_items: state.todo_repo.num_active_items,
+            num_all_items: state.todo_repo.num_all_items
         }
 
-        TodoDeleteCompletedComponent { is_disabled: state.todo_db.num_completed_items == 0 }
-        TodoToggleCompletedComponent { is_disabled: state.todo_db.num_all_items == 0, action: state.toggle_action }
+        TodoDeleteCompletedComponent { is_disabled: state.todo_repo.num_completed_items == 0 }
+        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action }
     }))
 }
 
 async fn delete_completed_todo(State(shared_state): State<SharedState>) -> impl IntoResponse {
     let mut state = shared_state.write().unwrap();
 
-    state.todo_db.todos.retain(|_, v| !v.is_completed);
-    state.todo_db.num_all_items -= state.todo_db.num_completed_items;
     state.toggle_action = TodoToggleAction::Check;
-    state.todo_db.num_completed_items = 0;
+    state.todo_repo.delete_completed();
 
-    let todos = if state.selected_filter == TodoListFilter::Completed {
-        Vec::new()
-    } else {
-        let mut todos = state.todo_db.todos.values().cloned().collect::<Vec<_>>();
-        todos.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-        todos
-    };
+    let todos = state.todo_repo.list(&state.selected_filter);
 
     Html(render_lazy(rsx! {
         TodoListComponent { todos: todos }
 
         TodoTabsComponent {
-            num_completed_items: state.todo_db.num_completed_items,
-            num_active_items: state.todo_db.num_active_items,
-            num_all_items: state.todo_db.num_all_items
+            num_completed_items: state.todo_repo.num_completed_items,
+            num_active_items: state.todo_repo.num_active_items,
+            num_all_items: state.todo_repo.num_all_items
         }
 
         TodoDeleteCompletedComponent { is_disabled: true }
-        TodoToggleCompletedComponent { is_disabled: state.todo_db.num_all_items == 0, action: state.toggle_action }
+        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action }
     }))
 }
 
 async fn edit_todo(
     State(shared_state): State<SharedState>,
     Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let item = shared_state
-        .read()
-        .unwrap()
-        .todo_db
-        .todos
-        .get(&id)
-        .cloned()
-        .ok_or(StatusCode::NOT_FOUND)?;
-
+) -> Result<impl IntoResponse, AppError> {
+    let item = shared_state.read().unwrap().todo_repo.get(&id)?;
     Ok(Html(render_lazy(rsx! { TodoEditComponent { item: item } })))
 }
 
@@ -297,38 +243,14 @@ async fn update_todo(
     State(shared_state): State<SharedState>,
     Path(id): Path<Uuid>,
     Form(todo_update): Form<TodoUpdate>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let mut todo = shared_state
-        .read()
-        .unwrap()
-        .todo_db
-        .todos
-        .get(&id)
-        .cloned()
-        .ok_or(StatusCode::NOT_FOUND)?;
-
+) -> Result<impl IntoResponse, AppError> {
     let mut state = shared_state.write().unwrap();
-
-    if let Some(is_completed) = todo_update.is_completed {
-        todo.is_completed = is_completed;
-
-        if todo.is_completed {
-            state.todo_db.num_completed_items += 1;
-            state.todo_db.num_active_items -= 1;
-        } else {
-            state.todo_db.num_completed_items -= 1;
-            state.todo_db.num_active_items += 1;
-        }
-    }
-
-    if let Some(text) = todo_update.text {
-        todo.text = text;
-    }
-
-    state.todo_db.todos.insert(todo.id, todo.clone());
+    let todo = state
+        .todo_repo
+        .update(&id, todo_update.text, todo_update.is_completed)?;
 
     Ok(Html(render_lazy(rsx! {
-        match &state.selected_filter {
+        match state.selected_filter {
             TodoListFilter::Active if todo.is_completed => rsx!(""),
             TodoListFilter::Active | TodoListFilter::All => rsx!(TodoItemComponent { todo: todo }),
             TodoListFilter::Completed if todo.is_completed => rsx!(TodoItemComponent { todo: todo }),
@@ -336,47 +258,36 @@ async fn update_todo(
         }
 
         TodoTabsComponent {
-            num_completed_items: state.todo_db.num_completed_items,
-            num_active_items: state.todo_db.num_active_items,
-            num_all_items: state.todo_db.num_all_items
+            num_completed_items: state.todo_repo.num_completed_items,
+            num_active_items: state.todo_repo.num_active_items,
+            num_all_items: state.todo_repo.num_all_items
         }
 
-        TodoDeleteCompletedComponent { is_disabled: state.todo_db.num_completed_items == 0 }
+        TodoDeleteCompletedComponent { is_disabled: state.todo_repo.num_completed_items == 0 }
     })))
 }
 
 async fn delete_todo(
     State(shared_state): State<SharedState>,
     Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, StatusCode> {
+) -> Result<impl IntoResponse, AppError> {
     let mut state = shared_state.write().unwrap();
+    state.todo_repo.delete(&id)?;
 
-    if let Some(item) = state.todo_db.todos.remove(&id) {
-        if item.is_completed {
-            state.todo_db.num_completed_items -= 1;
-        } else {
-            state.todo_db.num_active_items -= 1;
-        }
-
-        state.todo_db.num_all_items -= 1;
-
-        if state.todo_db.num_all_items == 0 {
-            state.toggle_action = TodoToggleAction::Check;
-        } else {
-            state.toggle_action = TodoToggleAction::Uncheck;
-        }
-
-        Ok(Html(render_lazy(rsx! {
-            TodoTabsComponent {
-                num_completed_items: state.todo_db.num_completed_items,
-                num_active_items: state.todo_db.num_active_items,
-                num_all_items: state.todo_db.num_all_items
-            }
-
-            TodoDeleteCompletedComponent { is_disabled: state.todo_db.num_completed_items == 0 }
-            TodoToggleCompletedComponent { is_disabled: state.todo_db.num_all_items == 0, action: state.toggle_action }
-        })))
+    state.toggle_action = if state.todo_repo.num_all_items == 0 {
+        TodoToggleAction::Check
     } else {
-        Err(StatusCode::NOT_FOUND)
-    }
+        TodoToggleAction::Uncheck
+    };
+
+    Ok(Html(render_lazy(rsx! {
+        TodoTabsComponent {
+            num_completed_items: state.todo_repo.num_completed_items,
+            num_active_items: state.todo_repo.num_active_items,
+            num_all_items: state.todo_repo.num_all_items
+        }
+
+        TodoDeleteCompletedComponent { is_disabled: state.todo_repo.num_completed_items == 0 }
+        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action }
+    })))
 }
