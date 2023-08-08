@@ -11,8 +11,8 @@ path = "src/main.rs"
 name = "todomvc"
 
 [dependencies]
-dioxus = { version = "0.3.2" }
-dioxus-ssr = { version = "0.3.0" }
+dioxus = { version = "0.4.0" }
+dioxus-ssr = { version = "0.4.0" }
 axum = "0.6.18"
 tokio = { version = "1.29.1", features = ["full"] }
 tower-http = { version = "0.4.0", features = ["fs", "trace"] }
@@ -23,3 +23,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tower = { version = "0.4", features = ["util"] }
+hyper = { version = "0.14", features = ["full"] }
+scraper = "0.17.1"

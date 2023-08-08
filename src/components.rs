@@ -8,7 +8,7 @@ pub struct TodoItemComponentProps {
 
 pub fn TodoItemComponent(cx: Scope<TodoItemComponentProps>) -> Element {
     cx.render(rsx! {
-        div { class: "panel-block is-justify-content-space-between",
+        div { class: "panel-block is-justify-content-space-between todo-item",
             input {
                 id: "todo-done-{cx.props.todo.id}",
                 "type": "checkbox",
@@ -49,7 +49,7 @@ pub struct TodoEditComponentProps {
 pub fn TodoEditComponent(cx: Scope<TodoEditComponentProps>) -> Element {
     cx.render(rsx! {
         form {
-            class: "is-flex-grow-1",
+            class: "is-flex-grow-1 todo-edit",
             "hx-patch": "/todo/{cx.props.item.id}",
             "hx-target": "closest .panel-block",
             "hx-swap": "outerHTML",
@@ -92,7 +92,7 @@ pub fn TodoCounterComponent(cx: Scope<TodoCounterComponentProps>) -> Element {
     cx.render(rsx! {
         span {
             id: "todo-counter-{cx.props.filter}",
-            class: "tag is-rounded",
+            class: "tag is-rounded todo-counter",
             "hx-swap-oob": true,
             "{cx.props.num_items}"
         }

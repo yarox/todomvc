@@ -3,6 +3,10 @@
 #![allow(clippy::unused_async)]
 #![allow(non_snake_case)]
 
+pub mod components;
+pub mod models;
+pub mod repository;
+
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -24,22 +28,18 @@ use tower_http::{
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
-pub mod components;
-pub mod models;
-pub mod repository;
-
-use components::{
+use crate::components::{
     TodoDeleteCompletedComponent, TodoEditComponent, TodoItemComponent, TodoListComponent,
     TodoTabsComponent, TodoToggleCompletedComponent,
 };
-use models::{TodoListFilter, TodoToggleAction};
-use repository::{TodoRepo, TodoRepoError};
+use crate::models::{TodoListFilter, TodoToggleAction};
+use crate::repository::{TodoRepo, TodoRepoError};
 
 #[derive(Debug)]
-struct AppState {
-    selected_filter: TodoListFilter,
-    toggle_action: TodoToggleAction,
-    todo_repo: TodoRepo,
+pub struct AppState {
+    pub selected_filter: TodoListFilter,
+    pub toggle_action: TodoToggleAction,
+    pub todo_repo: TodoRepo,
 }
 
 impl Default for AppState {
@@ -52,7 +52,7 @@ impl Default for AppState {
     }
 }
 
-type SharedState = Arc<RwLock<AppState>>;
+pub type SharedState = Arc<RwLock<AppState>>;
 
 enum AppError {
     TodoRepo(TodoRepoError),
@@ -95,9 +95,7 @@ pub struct ToggleCompletedTodoParams {
     action: TodoToggleAction,
 }
 
-pub fn app() -> Router {
-    let shared_state = SharedState::default();
-
+pub fn app(shared_state: SharedState) -> Router {
     Router::new()
         .nest_service("/", ServeFile::new("assets/index.html"))
         .nest_service("/assets", ServeDir::new("assets"))
@@ -128,8 +126,11 @@ pub async fn run() {
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     tracing::debug!("listening on {}", addr);
 
+    let shared_state = SharedState::default();
+    let app = app(shared_state);
+
     axum::Server::bind(&addr)
-        .serve(app().into_make_service())
+        .serve(app.into_make_service())
         .await
         .unwrap();
 }
@@ -249,6 +250,12 @@ async fn update_todo(
         .todo_repo
         .update(&id, todo_update.text, todo_update.is_completed)?;
 
+    state.toggle_action = if state.todo_repo.num_completed_items == state.todo_repo.num_all_items {
+        TodoToggleAction::Uncheck
+    } else {
+        TodoToggleAction::Check
+    };
+
     Ok(Html(render_lazy(rsx! {
         match state.selected_filter {
             TodoListFilter::Active if todo.is_completed => rsx!(""),
@@ -264,6 +271,7 @@ async fn update_todo(
         }
 
         TodoDeleteCompletedComponent { is_disabled: state.todo_repo.num_completed_items == 0 }
+        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action }
     })))
 }
 
