@@ -7,6 +7,8 @@ Simple [todo app](https://todomvc.com/) built using a combination of the followi
 - The user interface (UI) is designed with [HTMX](https://htmx.org).
 - Styling and layout are crafted using the [Bulma](https://bulma.io) CSS framework.
 
+![todomvc demo](demo.gif)
+
 ## Features at a Glance
 
 ### No todos
