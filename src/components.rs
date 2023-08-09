@@ -3,37 +3,37 @@ use dioxus::prelude::*;
 
 #[derive(Props, PartialEq, Eq)]
 pub struct TodoItemComponentProps {
-    todo: Todo,
+    item: Todo,
 }
 
 pub fn TodoItemComponent(cx: Scope<TodoItemComponentProps>) -> Element {
     cx.render(rsx! {
         div { class: "panel-block is-justify-content-space-between todo-item",
             input {
-                id: "todo-done-{cx.props.todo.id}",
+                id: "todo-done-{cx.props.item.id}",
                 "type": "checkbox",
-                checked: if cx.props.todo.is_completed { Some(true) } else { None },
-                "hx-patch": "/todo/{cx.props.todo.id}",
+                checked: if cx.props.item.is_completed { Some(true) } else { None },
+                "hx-patch": "/todo/{cx.props.item.id}",
                 "hx-target": "closest .panel-block",
                 "hx-swap": "outerHTML",
-                "hx-vals": "js:{{is_completed: document.getElementById('todo-done-{cx.props.todo.id}').checked}}"
+                "hx-vals": "js:{{is_completed: document.getElementById('todo-done-{cx.props.item.id}').checked}}"
             }
             p {
                 class: "is-flex-grow-1",
-                "hx-get": "/todo/{cx.props.todo.id}",
+                "hx-get": "/todo/{cx.props.item.id}",
                 "hx-trigger": "dblclick",
                 "hx-target": "this",
                 "hx-swap": "outerHTML",
 
-                if cx.props.todo.is_completed {
-                    rsx!(s { cx.props.todo.text.clone() })
+                if cx.props.item.is_completed {
+                    rsx!(s { cx.props.item.text.clone() })
                 } else {
-                    rsx!(cx.props.todo.text.clone())
+                    rsx!(cx.props.item.text.clone())
                 }
             }
             button {
                 class: "delete is-medium ml-2",
-                "hx-delete": "/todo/{cx.props.todo.id}",
+                "hx-delete": "/todo/{cx.props.item.id}",
                 "hx-target": "closest .panel-block",
                 "hx-swap": "outerHTML"
             }
@@ -68,15 +68,15 @@ pub fn TodoEditComponent(cx: Scope<TodoEditComponentProps>) -> Element {
 
 #[derive(Props, PartialEq, Eq)]
 pub struct TodoListComponentProps {
-    todos: Vec<Todo>,
+    items: Vec<Todo>,
 }
 
 pub fn TodoListComponent(cx: Scope<TodoListComponentProps>) -> Element {
     cx.render(rsx! {
         span {
             id: "todo-list",
-            for todo in cx.props.todos.clone() {
-                TodoItemComponent { todo: todo }
+            for item in cx.props.items.clone() {
+                TodoItemComponent { item: item }
             }
         }
     })

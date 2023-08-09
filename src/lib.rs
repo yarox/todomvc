@@ -142,10 +142,10 @@ async fn list_todo(
     shared_state.write().unwrap().selected_filter = filter;
 
     let state = shared_state.read().unwrap();
-    let todos = state.todo_repo.list(&filter);
+    let items = state.todo_repo.list(&filter);
 
     Html(render_lazy(rsx! {
-        TodoListComponent { todos: todos }
+        TodoListComponent { items: items }
 
         TodoTabsComponent {
             num_completed_items: state.todo_repo.num_completed_items,
@@ -163,13 +163,13 @@ async fn create_todo(
     Form(todo_create): Form<TodoCreate>,
 ) -> impl IntoResponse {
     let mut state = shared_state.write().unwrap();
-    let todo = state.todo_repo.create(&todo_create.text);
+    let item = state.todo_repo.create(&todo_create.text);
 
     state.toggle_action = TodoToggleAction::Check;
 
     Html(render_lazy(rsx! {
         if state.selected_filter != TodoListFilter::Completed {
-            rsx!(TodoItemComponent { todo: todo })
+            rsx!(TodoItemComponent { item: item })
         }
 
         TodoTabsComponent {
@@ -194,10 +194,10 @@ async fn toggle_completed_todo(
     };
 
     state.todo_repo.toggle_completed(&action);
-    let todos = state.todo_repo.list(&state.selected_filter);
+    let items = state.todo_repo.list(&state.selected_filter);
 
     Html(render_lazy(rsx! {
-        TodoListComponent { todos: todos }
+        TodoListComponent { items: items }
 
         TodoTabsComponent {
             num_completed_items: state.todo_repo.num_completed_items,
@@ -216,10 +216,10 @@ async fn delete_completed_todo(State(shared_state): State<SharedState>) -> impl 
     state.toggle_action = TodoToggleAction::Check;
     state.todo_repo.delete_completed();
 
-    let todos = state.todo_repo.list(&state.selected_filter);
+    let items = state.todo_repo.list(&state.selected_filter);
 
     Html(render_lazy(rsx! {
-        TodoListComponent { todos: todos }
+        TodoListComponent { items: items }
 
         TodoTabsComponent {
             num_completed_items: state.todo_repo.num_completed_items,
@@ -246,7 +246,7 @@ async fn update_todo(
     Form(todo_update): Form<TodoUpdate>,
 ) -> Result<impl IntoResponse, AppError> {
     let mut state = shared_state.write().unwrap();
-    let todo = state
+    let item = state
         .todo_repo
         .update(&id, todo_update.text, todo_update.is_completed)?;
 
@@ -258,9 +258,9 @@ async fn update_todo(
 
     Ok(Html(render_lazy(rsx! {
         match state.selected_filter {
-            TodoListFilter::Active if todo.is_completed => rsx!(""),
-            TodoListFilter::Active | TodoListFilter::All => rsx!(TodoItemComponent { todo: todo }),
-            TodoListFilter::Completed if todo.is_completed => rsx!(TodoItemComponent { todo: todo }),
+            TodoListFilter::Active if item.is_completed => rsx!(""),
+            TodoListFilter::Active | TodoListFilter::All => rsx!(TodoItemComponent { item: item }),
+            TodoListFilter::Completed if item.is_completed => rsx!(TodoItemComponent { item: item }),
             TodoListFilter::Completed => rsx!(""),
         }
 
