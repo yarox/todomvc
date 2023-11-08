@@ -362,10 +362,21 @@ async fn update_todo(
     })
 }
 
+#[derive(Template)]
+#[template(path = "responses/delete_todo.html")]
+struct DeleteTodoResponse {
+    num_completed_items: u32,
+    num_active_items: u32,
+    num_all_items: u32,
+    is_disabled_delete: bool,
+    is_disabled_toggle: bool,
+    action: TodoToggleAction,
+}
+
 async fn delete_todo(
     State(shared_state): State<SharedState>,
     Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<DeleteTodoResponse, AppError> {
     let mut state = shared_state.write().unwrap();
     state.todo_repo.delete(&id)?;
 
@@ -375,14 +386,12 @@ async fn delete_todo(
         TodoToggleAction::Uncheck
     };
 
-    Ok(Html(render_lazy(rsx! {
-        TodoTabsComponent {
-            num_completed_items: state.todo_repo.num_completed_items,
-            num_active_items: state.todo_repo.num_active_items,
-            num_all_items: state.todo_repo.num_all_items
-        }
-
-        TodoDeleteCompletedComponent { is_disabled: state.todo_repo.num_completed_items == 0 }
-        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action }
-    })))
+    Ok(DeleteTodoResponse {
+        num_completed_items: state.todo_repo.num_completed_items,
+        num_active_items: state.todo_repo.num_active_items,
+        num_all_items: state.todo_repo.num_all_items,
+        is_disabled_delete: state.todo_repo.num_completed_items == 0,
+        is_disabled_toggle: state.todo_repo.num_all_items == 0,
+        action: state.toggle_action,
+    })
 }
