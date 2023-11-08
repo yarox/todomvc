@@ -66,7 +66,7 @@ impl TodoRepo {
         text: Option<String>,
         is_completed: Option<bool>,
     ) -> Result<Todo, TodoRepoError> {
-        let mut todo = self.items.get_mut(id).ok_or(TodoRepoError::NotFound)?;
+        let todo = self.items.get_mut(id).ok_or(TodoRepoError::NotFound)?;
 
         if let Some(is_completed) = is_completed {
             todo.is_completed = is_completed;

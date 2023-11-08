@@ -1,0 +1,13 @@
+{% macro render(is_disabled, action) %}
+<button
+  id="todo-toggle-completed"
+  class="button is-link is-outlined is-fullwidth mr-1"
+  hx-target="#todo-list"
+  hx-swap="outerHTML"
+  hx-patch="/todo?action={{ action }}"
+  hx-swap-oob="true"
+  {% if is_disabled %}
+  disabled
+  {% endif %}
+>{{ action }} all</button>
+{% endmacro %}

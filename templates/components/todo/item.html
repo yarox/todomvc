@@ -1,0 +1,37 @@
+{% macro render(id, text, is_completed) %}
+<div class="panel-block is-justify-content-space-between todo-item">
+  <input
+    id="todo-done-{{ id }}"
+    type="checkbox"
+    {% if is_completed %}
+    checked
+    {% endif %}
+    hx-patch="/todo/{{ id }}"
+    hx-target="closest .panel-block"
+    hx-swap="outerHTML"
+    hx-vals="js:{is_completed: document.getElementById('todo-done-{{ id }}').checked}"
+  >
+
+  <p
+    class="is-flex-grow-1"
+    hx-get="/todo/{{ id }}"
+    hx-trigger="dblclick"
+    hx-target="this"
+    hx-swap="outerHTML"
+  >
+    {%- if is_completed -%}
+    <s>{{- text -}}</s>
+    {%- else -%}
+    {{- text -}}
+    {%- endif -%}
+  </p>
+
+  <button
+    class="delete is-medium ml-2"
+    hx-delete="/todo/{{ id }}"
+    hx-target="closest .panel-block"
+    hx-swap="outerHTML"
+  >
+  </button>
+</div>
+{% endmacro %}

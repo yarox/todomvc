@@ -1,0 +1,18 @@
+{% macro render(id, text) %}
+<form
+  class="is-flex-grow-1 todo-edit"
+  hx-patch="/todo/{{ id }}"
+  hx-target="closest .panel-block"
+  hx-swap="outerHTML"
+>
+  <p>
+    <input
+      class="input"
+      type="text"
+      name="text"
+      value="{{ text }}"
+      autofocus="true"
+    >
+  </p>
+</form>
+{% endmacro %}

@@ -1,0 +1,14 @@
+{% import "components/panel/toggle_completed_button.html" as toggle_completed_button %}
+{% import "components/panel/delete_completed_button.html" as delete_completed_button %}
+{% import "components/tabs/header.html" as tabs_header %}
+{% import "components/todo/item.html" as todo_item %}
+
+{% match item %}
+{% when Some with (item) %}
+{% call todo_item::render(item.id, item.text, item.is_completed) %}
+{% when None %}
+{% endmatch %}
+
+{% call tabs_header::render(num_completed_items, num_active_items, num_all_items) %}
+{% call toggle_completed_button::render(is_disabled_toggle, action) %}
+{% call delete_completed_button::render(is_disabled_delete) %}

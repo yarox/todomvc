@@ -1,0 +1,15 @@
+{% macro render(is_disabled) %}
+<button
+  id="todo-delete-completed"
+  class="button is-danger is-outlined is-fullwidth ml-1"
+  hx-target="#todo-list"
+  hx-swap="outerHTML"
+  hx-delete="/todo"
+  hx-swap-oob="true"
+  {% if is_disabled %}
+  disabled
+  {% endif %}
+>
+  Delete completed
+</button>
+{% endmacro %}
