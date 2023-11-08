@@ -104,7 +104,7 @@ pub fn app(shared_state: SharedState) -> Router {
             get(list_todos)
                 .post(create_todo)
                 .patch(toggle_completed_todos)
-                .delete(delete_completed_todo),
+                .delete(delete_completed_todos),
         )
         .route(
             "/todo/:id",
@@ -259,7 +259,21 @@ async fn toggle_completed_todos(
     })
 }
 
-async fn delete_completed_todo(State(shared_state): State<SharedState>) -> impl IntoResponse {
+#[derive(Template)]
+#[template(path = "responses/delete_completed_todos.html")]
+struct DeleteCompletedTodosResponse {
+    num_completed_items: u32,
+    num_active_items: u32,
+    num_all_items: u32,
+    is_disabled_delete: bool,
+    is_disabled_toggle: bool,
+    action: TodoToggleAction,
+    items: Vec<Todo>,
+}
+
+async fn delete_completed_todos(
+    State(shared_state): State<SharedState>,
+) -> Result<DeleteCompletedTodosResponse, AppError> {
     let mut state = shared_state.write().unwrap();
 
     state.toggle_action = TodoToggleAction::Check;
@@ -267,18 +281,15 @@ async fn delete_completed_todo(State(shared_state): State<SharedState>) -> impl 
 
     let items = state.todo_repo.list(&state.selected_filter);
 
-    Html(render_lazy(rsx! {
-        TodoListComponent { items: items }
-
-        TodoTabsComponent {
-            num_completed_items: state.todo_repo.num_completed_items,
-            num_active_items: state.todo_repo.num_active_items,
-            num_all_items: state.todo_repo.num_all_items
-        }
-
-        TodoDeleteCompletedComponent { is_disabled: true }
-        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action }
-    }))
+    Ok(DeleteCompletedTodosResponse {
+        num_completed_items: state.todo_repo.num_completed_items,
+        num_active_items: state.todo_repo.num_active_items,
+        num_all_items: state.todo_repo.num_all_items,
+        is_disabled_delete: true,
+        is_disabled_toggle: state.todo_repo.num_all_items == 0,
+        action: state.toggle_action,
+        items,
+    })
 }
 
 async fn edit_todo(
