@@ -6,7 +6,7 @@
     {% if is_completed %}
     checked
     {% endif %}
-    hx-patch="/todo/{cx.props.item.id}"
+    hx-patch="/todo/{{ id }}"
     hx-target="closest .panel-block"
     hx-swap="outerHTML"
     hx-vals="js:{is_completed: document.getElementById('todo-done-{{ id }}').checked}"
@@ -19,11 +19,19 @@
     hx-target="this"
     hx-swap="outerHTML"
   >
-    {% if is_completed %}
-    <s>{{ text }}</s>
-    {% else %}
-    {{ text }}
-    {% endif %}
+    {%- if is_completed -%}
+    <s>{{- text -}}</s>
+    {%- else -%}
+    {{- text -}}
+    {%- endif -%}
   </p>
+
+  <button
+    class="delete is-medium ml-2"
+    hx-delete="/todo/{{ id }}"
+    hx-target="closest .panel-block"
+    hx-swap="outerHTML"
+  >
+  </button>
 </div>
 {% endmacro %}
