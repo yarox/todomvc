@@ -186,10 +186,9 @@ struct CreateTodoResponse {
     num_completed_items: u32,
     num_active_items: u32,
     num_all_items: u32,
-    is_completed_selected: bool,
     is_disabled_toggle: bool,
     action: TodoToggleAction,
-    item: Todo,
+    item: Option<Todo>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -204,13 +203,18 @@ async fn create_todo(
     let mut state = shared_state.write().unwrap();
     let item = state.todo_repo.create(&text);
 
+    let item = if state.selected_filter == TodoListFilter::Completed {
+        None
+    } else {
+        Some(item)
+    };
+
     state.toggle_action = TodoToggleAction::Check;
 
     Ok(CreateTodoResponse {
         num_completed_items: state.todo_repo.num_completed_items,
         num_active_items: state.todo_repo.num_active_items,
         num_all_items: state.todo_repo.num_all_items,
-        is_completed_selected: state.selected_filter == TodoListFilter::Completed,
         is_disabled_toggle: false,
         action: state.toggle_action,
         item,
@@ -306,11 +310,29 @@ async fn edit_todo(
     Ok(EditTodoResponse { item })
 }
 
+#[derive(Template)]
+#[template(path = "responses/update_todo.html")]
+struct UpdateTodoResponse {
+    num_completed_items: u32,
+    num_active_items: u32,
+    num_all_items: u32,
+    is_disabled_delete: bool,
+    is_disabled_toggle: bool,
+    action: TodoToggleAction,
+    item: Option<Todo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateTodoForm {
+    is_completed: Option<bool>,
+    text: Option<String>,
+}
+
 async fn update_todo(
     State(shared_state): State<SharedState>,
     Path(id): Path<Uuid>,
-    Form(todo_update): Form<TodoUpdate>,
-) -> Result<impl IntoResponse, AppError> {
+    Form(todo_update): Form<UpdateTodoForm>,
+) -> Result<UpdateTodoResponse, AppError> {
     let mut state = shared_state.write().unwrap();
     let item = state
         .todo_repo
@@ -322,23 +344,22 @@ async fn update_todo(
         TodoToggleAction::Check
     };
 
-    Ok(Html(render_lazy(rsx! {
-        match state.selected_filter {
-            TodoListFilter::Active if item.is_completed => rsx!(""),
-            TodoListFilter::Active | TodoListFilter::All => rsx!(TodoItemComponent { item: item }),
-            TodoListFilter::Completed if item.is_completed => rsx!(TodoItemComponent { item: item }),
-            TodoListFilter::Completed => rsx!(""),
-        },
+    let item = match state.selected_filter {
+        TodoListFilter::Active if item.is_completed => None,
+        TodoListFilter::Active | TodoListFilter::All => Some(item),
+        TodoListFilter::Completed if item.is_completed => Some(item),
+        TodoListFilter::Completed => None,
+    };
 
-        TodoTabsComponent {
-            num_completed_items: state.todo_repo.num_completed_items,
-            num_active_items: state.todo_repo.num_active_items,
-            num_all_items: state.todo_repo.num_all_items
-        }
-
-        TodoDeleteCompletedComponent { is_disabled: state.todo_repo.num_completed_items == 0 }
-        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action }
-    })))
+    Ok(UpdateTodoResponse {
+        num_completed_items: state.todo_repo.num_completed_items,
+        num_active_items: state.todo_repo.num_active_items,
+        num_all_items: state.todo_repo.num_all_items,
+        is_disabled_delete: state.todo_repo.num_completed_items == 0,
+        is_disabled_toggle: state.todo_repo.num_all_items == 0,
+        action: state.toggle_action,
+        item,
+    })
 }
 
 async fn delete_todo(
