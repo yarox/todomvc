@@ -103,7 +103,7 @@ pub fn app(shared_state: SharedState) -> Router {
             "/todo",
             get(list_todos)
                 .post(create_todo)
-                .patch(toggle_completed_todo)
+                .patch(toggle_completed_todos)
                 .delete(delete_completed_todo),
         )
         .route(
@@ -199,10 +199,10 @@ struct CreateTodoForm {
 
 async fn create_todo(
     State(shared_state): State<SharedState>,
-    Form(form): Form<CreateTodoForm>,
+    Form(CreateTodoForm { text }): Form<CreateTodoForm>,
 ) -> Result<CreateTodoResponse, AppError> {
     let mut state = shared_state.write().unwrap();
-    let item = state.todo_repo.create(&form.text);
+    let item = state.todo_repo.create(&text);
 
     state.toggle_action = TodoToggleAction::Check;
 
@@ -217,10 +217,27 @@ async fn create_todo(
     })
 }
 
-async fn toggle_completed_todo(
+#[derive(Template)]
+#[template(path = "responses/toggle_completed_todos.html")]
+struct ToggleCompletedTodosResponse {
+    num_completed_items: u32,
+    num_active_items: u32,
+    num_all_items: u32,
+    is_disabled_delete: bool,
+    is_disabled_toggle: bool,
+    action: TodoToggleAction,
+    items: Vec<Todo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ToggleCompletedTodosQuery {
+    action: TodoToggleAction,
+}
+
+async fn toggle_completed_todos(
     State(shared_state): State<SharedState>,
-    Query(ToggleCompletedTodoParams { action }): Query<ToggleCompletedTodoParams>,
-) -> impl IntoResponse {
+    Query(ToggleCompletedTodosQuery { action }): Query<ToggleCompletedTodosQuery>,
+) -> Result<ToggleCompletedTodosResponse, AppError> {
     let mut state = shared_state.write().unwrap();
 
     state.toggle_action = match action {
@@ -231,18 +248,15 @@ async fn toggle_completed_todo(
     state.todo_repo.toggle_completed(&action);
     let items = state.todo_repo.list(&state.selected_filter);
 
-    Html(render_lazy(rsx! {
-        TodoListComponent { items: items }
-
-        TodoTabsComponent {
-            num_completed_items: state.todo_repo.num_completed_items,
-            num_active_items: state.todo_repo.num_active_items,
-            num_all_items: state.todo_repo.num_all_items
-        }
-
-        TodoDeleteCompletedComponent { is_disabled: state.todo_repo.num_completed_items == 0 }
-        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action }
-    }))
+    Ok(ToggleCompletedTodosResponse {
+        num_completed_items: state.todo_repo.num_completed_items,
+        num_active_items: state.todo_repo.num_active_items,
+        num_all_items: state.todo_repo.num_all_items,
+        is_disabled_delete: state.todo_repo.num_completed_items == 0,
+        is_disabled_toggle: state.todo_repo.num_all_items == 0,
+        action: state.toggle_action,
+        items,
+    })
 }
 
 async fn delete_completed_todo(State(shared_state): State<SharedState>) -> impl IntoResponse {
