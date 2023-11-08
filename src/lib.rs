@@ -1,4 +1,5 @@
 #![allow(clippy::uninlined_format_args)]
+#![allow(clippy::missing_panics_doc)]
 #![allow(clippy::option_if_let_else)]
 #![allow(clippy::unused_async)]
 #![allow(non_snake_case)]
@@ -17,6 +18,7 @@ use axum::{
 };
 use dioxus::prelude::*;
 use dioxus_ssr::render_lazy;
+use models::Todo;
 use serde::Deserialize;
 use std::{
     net::SocketAddr,
@@ -99,7 +101,7 @@ pub fn app(shared_state: SharedState) -> Router {
         .route("/", get(get_index))
         .route(
             "/todo",
-            get(list_todo)
+            get(list_todos)
                 .post(create_todo)
                 .patch(toggle_completed_todo)
                 .delete(delete_completed_todo),
@@ -141,27 +143,41 @@ async fn get_index() -> Result<GetIndexResponse, AppError> {
     Ok(GetIndexResponse)
 }
 
-async fn list_todo(
+#[derive(Template)]
+#[template(path = "responses/list_todos.html")]
+struct ListTodosResponse {
+    num_completed_items: u32,
+    num_active_items: u32,
+    num_all_items: u32,
+    is_disabled_delete: bool,
+    is_disabled_toggle: bool,
+    action: TodoToggleAction,
+    items: Vec<Todo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListTodosQuery {
+    filter: TodoListFilter,
+}
+
+async fn list_todos(
     State(shared_state): State<SharedState>,
-    Query(ListTodoParams { filter }): Query<ListTodoParams>,
-) -> impl IntoResponse {
+    Query(ListTodosQuery { filter }): Query<ListTodosQuery>,
+) -> Result<ListTodosResponse, AppError> {
     shared_state.write().unwrap().selected_filter = filter;
 
     let state = shared_state.read().unwrap();
     let items = state.todo_repo.list(&filter);
 
-    Html(render_lazy(rsx! {
-        TodoListComponent { items: items }
-
-        TodoTabsComponent {
-            num_completed_items: state.todo_repo.num_completed_items,
-            num_active_items: state.todo_repo.num_active_items,
-            num_all_items: state.todo_repo.num_all_items
-        }
-
-        TodoDeleteCompletedComponent { is_disabled: state.todo_repo.num_completed_items == 0 }
-        TodoToggleCompletedComponent { is_disabled: state.todo_repo.num_all_items == 0, action: state.toggle_action }
-    }))
+    Ok(ListTodosResponse {
+        num_completed_items: state.todo_repo.num_completed_items,
+        num_active_items: state.todo_repo.num_active_items,
+        num_all_items: state.todo_repo.num_all_items,
+        is_disabled_delete: state.todo_repo.num_completed_items == 0,
+        is_disabled_toggle: state.todo_repo.num_all_items == 0,
+        action: state.toggle_action,
+        items,
+    })
 }
 
 async fn create_todo(

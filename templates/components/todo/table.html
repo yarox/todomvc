@@ -1,0 +1,9 @@
+{% import "components/todo/item.html" as todo_item %}
+
+{% macro render(items) %}
+<span id="todo-list">
+  {% for item in items %}
+  {% call todo_item::render(item.id, item.text, item.is_completed) %}
+  {% endfor %}
+</span>
+{% endmacro %}

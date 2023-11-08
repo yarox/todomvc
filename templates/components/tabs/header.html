@@ -1,0 +1,7 @@
+{% import "components/tabs/counter.html" as tab_counter %}
+
+{% macro render(num_completed_items, num_active_items, num_all_items) %}
+{% call tab_counter::render("all", num_all_items) %}
+{% call tab_counter::render("active", num_active_items) %}
+{% call tab_counter::render("completed", num_completed_items) %}
+{% endmacro %}

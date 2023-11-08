@@ -1,0 +1,9 @@
+{% macro render(name, num_items) %}
+<span
+  id="todo-counter-{{ name }}"
+  class="tag is-rounded todo-counter"
+  hx-swap-oob="true"
+>
+  {{ num_items }}
+</span>
+{% endmacro %}
