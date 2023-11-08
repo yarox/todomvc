@@ -7,6 +7,7 @@ pub mod components;
 pub mod models;
 pub mod repository;
 
+use askama::Template;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -21,10 +22,7 @@ use std::{
     net::SocketAddr,
     sync::{Arc, RwLock},
 };
-use tower_http::{
-    services::{ServeDir, ServeFile},
-    trace::TraceLayer,
-};
+use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
@@ -97,8 +95,8 @@ pub struct ToggleCompletedTodoParams {
 
 pub fn app(shared_state: SharedState) -> Router {
     Router::new()
-        .nest_service("/", ServeFile::new("assets/index.html"))
         .nest_service("/assets", ServeDir::new("assets"))
+        .route("/", get(get_index))
         .route(
             "/todo",
             get(list_todo)
@@ -133,6 +131,14 @@ pub async fn run() {
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+#[derive(Template)]
+#[template(path = "responses/index.html")]
+struct GetIndexResponse;
+
+async fn get_index() -> Result<GetIndexResponse, AppError> {
+    Ok(GetIndexResponse)
 }
 
 async fn list_todo(
@@ -262,7 +268,7 @@ async fn update_todo(
             TodoListFilter::Active | TodoListFilter::All => rsx!(TodoItemComponent { item: item }),
             TodoListFilter::Completed if item.is_completed => rsx!(TodoItemComponent { item: item }),
             TodoListFilter::Completed => rsx!(""),
-        }
+        },
 
         TodoTabsComponent {
             num_completed_items: state.todo_repo.num_completed_items,
