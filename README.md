@@ -2,8 +2,8 @@
 
 Simple [todo app](https://todomvc.com/) built using a combination of the following technologies:
 
-- For the backend, we've used Rust along with [Axum](https://github.com/tokio-rs/axum).
-- The SSR (Server-Side Rendering) components are powered by [Dioxus](https://github.com/DioxusLabs/dioxus).
+- For the backend, we've used [Rust](https://www.rust-lang.org/) along with [Axum](https://github.com/tokio-rs/axum).
+- The SSR (Server-Side Rendering) templates are powered by [Askama](https://github.com/djc/askama).
 - The user interface (UI) is designed with [HTMX](https://htmx.org).
 - Styling and layout are crafted using the [Bulma](https://bulma.io) CSS framework.
 

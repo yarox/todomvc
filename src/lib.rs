@@ -4,7 +4,6 @@
 #![allow(clippy::unused_async)]
 #![allow(non_snake_case)]
 
-pub mod components;
 pub mod models;
 pub mod repository;
 
@@ -12,12 +11,10 @@ use askama::Template;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     routing::get,
     Form, Router,
 };
-use dioxus::prelude::*;
-use dioxus_ssr::render_lazy;
 use models::Todo;
 use serde::Deserialize;
 use std::{
@@ -28,10 +25,6 @@ use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
-use crate::components::{
-    TodoDeleteCompletedComponent, TodoEditComponent, TodoItemComponent, TodoListComponent,
-    TodoTabsComponent, TodoToggleCompletedComponent,
-};
 use crate::models::{TodoListFilter, TodoToggleAction};
 use crate::repository::{TodoRepo, TodoRepoError};
 
@@ -74,27 +67,6 @@ impl IntoResponse for AppError {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct TodoCreate {
-    text: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct TodoUpdate {
-    is_completed: Option<bool>,
-    text: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ListTodoParams {
-    filter: TodoListFilter,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ToggleCompletedTodoParams {
-    action: TodoToggleAction,
-}
-
 pub fn app(shared_state: SharedState) -> Router {
     Router::new()
         .nest_service("/assets", ServeDir::new("assets"))
@@ -129,6 +101,7 @@ pub async fn run() {
     let shared_state = SharedState::default();
     let app = app(shared_state);
 
+    #[allow(clippy::unwrap_used)]
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
