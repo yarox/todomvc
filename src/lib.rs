@@ -292,12 +292,18 @@ async fn delete_completed_todos(
     })
 }
 
+#[derive(Template)]
+#[template(path = "responses/edit_todo.html")]
+struct EditTodoResponse {
+    item: Todo,
+}
+
 async fn edit_todo(
     State(shared_state): State<SharedState>,
     Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<EditTodoResponse, AppError> {
     let item = shared_state.read().unwrap().todo_repo.get(&id)?;
-    Ok(Html(render_lazy(rsx! { TodoEditComponent { item: item } })))
+    Ok(EditTodoResponse { item })
 }
 
 async fn update_todo(
